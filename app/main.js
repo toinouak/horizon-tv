@@ -253,34 +253,73 @@
     return out;
   }
 
+  // L'API tizen est parfois accessible directement depuis la page : dans ce cas, pas besoin du service.
+  function pageTizen() {
+    try { return window.tizen && tizen.application && typeof tizen.application.getAppsInfo === 'function'; } catch (e) { return false; }
+  }
+
+  function setDockMessage(text) {
+    var track = $('dockTrack');
+    if (track.children.length && !track.firstChild.getAttribute('data-msg')) return;
+    track.innerHTML = '<div class="tile" data-msg="1"><div class="face" style="background:#20232b;font-size:22px">' + text + '</div></div>';
+  }
+
+  var serviceDown = false;
   function loadApps(attempt) {
     if (DEMO) {
       setApps(DEMO_APPS.map(function (d) { return { id: d[0], name: d[1], color: d[2], show: true }; }));
       return;
     }
-    var xhr = new XMLHttpRequest();
-    xhr.open('GET', API + '/apps');
-    xhr.timeout = 3000;
-    xhr.onload = function () {
-      try { setApps(JSON.parse(xhr.responseText)); } catch (e) { retry(); }
-    };
-    xhr.onerror = xhr.ontimeout = retry;
-    xhr.send();
+    if (attempt === 1 && !apps.length) setDockMessage('Chargement des applis\u2026');
+    if (pageTizen()) {
+      try {
+        tizen.application.getAppsInfo(function (list) {
+          setApps(list.map(function (a) { return { id: a.id, name: a.name, show: a.show !== false, icon: false }; }));
+        }, function () { viaService(); });
+        return;
+      } catch (e) {}
+    }
+    viaService();
+
+    function viaService() {
+      var xhr = new XMLHttpRequest();
+      xhr.open('GET', API + '/apps');
+      xhr.timeout = 2500;
+      xhr.onload = function () {
+        try { serviceDown = false; setApps(JSON.parse(xhr.responseText)); } catch (e) { retry(); }
+      };
+      xhr.onerror = xhr.ontimeout = retry;
+      xhr.send();
+    }
     function retry() {
-      if (attempt < 30) setTimeout(function () { loadApps(attempt + 1); }, 600);
-      else showToast('Service Horizon indisponible : relance TizenBrew', 6000);
+      if (attempt < 12) { setTimeout(function () { loadApps(attempt + 1); }, 800); return; }
+      serviceDown = true;
+      setDockMessage('Service Horizon indisponible');
+      showToast('Service Horizon indisponible : ferme et rouvre TizenBrew', 10000);
+      // On continue d'essayer en fond : le service peut démarrer plus tard.
+      setTimeout(function () { loadApps(2); }, 10000);
     }
   }
 
   function launch(app) {
     if (!app) return;
-    showToast('Ouverture de ' + app.name + '…', 2500);
+    showToast('Ouverture de ' + app.name + '\u2026', 2500);
     if (DEMO) return;
+    if (pageTizen() && typeof tizen.application.launch === 'function') {
+      try {
+        tizen.application.launch(app.id, function () {}, function () { launchViaService(app); });
+        return;
+      } catch (e) {}
+    }
+    launchViaService(app);
+  }
+
+  function launchViaService(app) {
     var xhr = new XMLHttpRequest();
     xhr.open('GET', API + '/launch?id=' + encodeURIComponent(app.id));
     xhr.timeout = 8000;
-    xhr.onload = function () { if (xhr.status !== 200) showToast('Impossible d’ouvrir ' + app.name, 4000); };
-    xhr.onerror = xhr.ontimeout = function () { showToast('Impossible d’ouvrir ' + app.name, 4000); };
+    xhr.onload = function () { if (xhr.status !== 200) showToast('Impossible d\u2019ouvrir ' + app.name, 4000); };
+    xhr.onerror = xhr.ontimeout = function () { showToast('Impossible d\u2019ouvrir ' + app.name, 4000); };
     xhr.send();
   }
 
