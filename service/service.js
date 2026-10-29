@@ -11,7 +11,7 @@ var url = require('url');
 var fs = require('fs');
 
 var PORT = 8097;
-var VERSION = 2; // à augmenter à chaque changement : une version plus récente remplace l'ancienne
+var VERSION = 3; // à augmenter à chaque changement : une version plus récente remplace l'ancienne
 
 var PASS_THROUGH_MS = 4000;   // Home appuyé deux fois en moins de 4 s : l'accueil Samsung reste affiché
 var LEARN_MS = 12000;         // durée de l'apprentissage de la touche Home
@@ -42,9 +42,12 @@ var learnTimer = null;
 var listenerId = null;
 
 // ---------------------------------------------------------------- Réglages persistants
+// Certains environnements de service n'exposent pas « process » : on ne doit pas planter pour autant.
+var HOME_DIR = '';
+try { HOME_DIR = (typeof process !== 'undefined' && process.env && process.env.HOME) || ''; } catch (e) {}
 var CONFIG_DIRS = [
-  (process.env.HOME || '') + '/share',
-  process.env.HOME || '',
+  HOME_DIR ? HOME_DIR + '/share' : '',
+  HOME_DIR,
   '/home/owner/share',
   '/opt/usr/home/owner/share',
   '/tmp'
@@ -305,7 +308,8 @@ server.on('error', function (e) {
   }).on('error', function () { setTimeout(listen, 500); });
 });
 
-loadConfig();
-listApps(function () {});
-startListener();
+// Démarrage : chaque étape est isolée pour qu'une erreur n'empêche pas le serveur local de répondre.
+try { loadConfig(); } catch (e) {}
+try { listApps(function () {}); } catch (e) {}
+try { startListener(); } catch (e) {}
 listen();
